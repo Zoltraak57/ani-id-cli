@@ -45,6 +45,26 @@ parse_search() {
         decode_entities
 }
 
+# episode list: episode<TAB>url, ascending
+parse_episodes() {
+    tr '\n' ' ' |
+        sed 's|<div class="episodelist">|\
+<div class="episodelist">|g' |
+        sed -n '/<div class="episodelist">/p' |
+        sed 's|<li>|\
+<li>|g' |
+        sed -nE 's|.*<a href="([^"]*/episode/[^"]*)"[^>]*>[^<]*Episode ([0-9]+(\.[0-9]+)?)[^<]*</a>.*|\2\t\1|p' |
+        sort -n -k1,1 |
+        uniq
+}
+
+# episode page title
+parse_episode_title() {
+    tr '\n' ' ' |
+        sed -nE 's|.*<h1 class="posttl">([^<]*)</h1>.*|\1|p' |
+        decode_entities
+}
+
 main() {
     printf 'ani-id-cli %s\n' "$version_number"
 }
