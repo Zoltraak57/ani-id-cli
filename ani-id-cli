@@ -84,6 +84,35 @@ parse_video_url() {
     printf '%s\n' "$_url"
 }
 
+# mirror download entries: quality<TAB>server<TAB>data-content
+parse_mirrors() {
+    { tr '\n' ' '; printf '\n'; } |
+        sed 's|<ul class="m|\
+<ul class="m|g' |
+        sed -n '/<ul class="m[0-9][0-9][0-9]p"/p' |
+        while IFS= read -r _block; do
+            _quality="$(printf '%s' "$_block" | sed -nE 's|.*<ul class="m([0-9]+p)".*|\1|p')"
+            printf '%s\n' "$_block" |
+                sed 's|<li>|\
+<li>|g' |
+                sed -nE 's|.*<li>.*data-content="([^"]+)"[^>]*>([^<]*)</a>.*|\1\t\2|p' |
+                while IFS="$(printf '\t')" read -r _data _server; do
+                    _server="$(printf '%s' "$_server" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+                    printf '%s\t%s\t%s\n' "$_quality" "$_server" "$_data"
+                done
+        done
+}
+
+json_field() {
+    sed -nE 's|.*"'"$1"'"[[:space:]]*:[[:space:]]*"([^"]*)".*|\1|p'
+}
+
+b64_decode() {
+    printf '%s\n' "$1" | base64 -d 2>/dev/null ||
+        printf '%s\n' "$1" | base64 -D 2>/dev/null ||
+        printf '%s\n' "$1" | openssl base64 -d -A 2>/dev/null
+}
+
 main() {
     printf 'ani-id-cli %s\n' "$version_number"
 }
