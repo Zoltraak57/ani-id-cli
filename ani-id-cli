@@ -11,13 +11,28 @@ referer="${base_url%/}/"
 hist_dir="${ANI_ID_HIST_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/ani-id-cli}"
 histfile="$hist_dir/history"
 
+curl_exe="${ANI_ID_CURL:-curl}"
+download_dir="${ANI_ID_DOWNLOAD_DIR:-.}"
+quality="${ANI_ID_QUALITY:-best}"
+menu_program="${ANI_ID_MENU:-fzf}"
+player_function="${ANI_ID_PLAYER:-}"
+no_detach=0
+source="search"
+index=""
+ep_no=""
+query=""
+anime_url=""
+anime_title=""
+_episode_maps=""
+_ep_list=""
+
 die() {
     printf "\33[2K\r\033[1;31m%s\033[0m\n" "$*" >&2
     exit 1
 }
 
 info() {
-    printf "\33[2K\r\033[1;34m%s\033[0m\n" "$*"
+    printf "\33[2K\r\033[1;34m%s\033[0m\n" "$*" >&2
 }
 
 warn() {
@@ -70,13 +85,19 @@ parse_episode_title() {
 
 # primary player iframe on the episode page
 parse_embed_url() {
-    tr '\n' ' ' |
+    _page="$(cat)"
+    _url="$(printf '%s' "$_page" | tr '\n' ' ' |
         sed 's|<div class="player-embed"|\
 <div class="player-embed"|g' |
         sed -n '/<div class="player-embed"/p' |
         grep -oE '<iframe[^>]*src="[^"]+"' |
         head -n 1 |
-        sed -E 's|.*src="([^"]+)".*|\1|'
+        sed -E 's|.*src="([^"]+)".*|\1|')"
+    [ -z "$_url" ] && _url="$(printf '%s' "$_page" | tr '\n' ' ' |
+        grep -oE '<iframe[^>]*src="[^"]+"' |
+        head -n 1 |
+        sed -E 's|.*src="([^"]+)".*|\1|')"
+    printf '%s\n' "$_url"
 }
 
 # direct mp4 from the embed page
@@ -107,7 +128,8 @@ parse_mirrors() {
 }
 
 json_field() {
-    sed -nE 's|.*"'"$1"'"[[:space:]]*:[[:space:]]*"([^"]*)".*|\1|p'
+    sed -nE 's|.*"'"$1"'"[[:space:]]*:[[:space:]]*"([^"]*)".*|\1|p; s|.*"'"$1"'"[[:space:]]*:[[:space:]]*([0-9]+).*|\1|p' |
+        sed -e 's|\\/|/|g' -e 's|\\"|"|g'
 }
 
 b64_decode() {
@@ -158,8 +180,364 @@ history_set() {
     ' "$histfile" >"$_new" && mv "$_new" "$histfile"
 }
 
+dep_ch() {
+    command -v "$1" >/dev/null 2>&1 || die "Program $1 not found. Please install it."
+}
+
+dep_ch_failover() {
+    _rest="$1"
+    while [ -n "$_rest" ]; do
+        _prog="${_rest%%,*}"
+        if command -v "$_prog" >/dev/null 2>&1; then
+            printf '%s' "$_prog"
+            return 0
+        fi
+        [ "$_rest" = "$_prog" ] && break
+        _rest="${_rest#*,}"
+    done
+    return 1
+}
+
+sanitize_filename() {
+    printf '%s' "$1" | tr '<>:"/\\|?*' '_' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+quality_matches() {
+    case "$1" in
+        *"$2"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# NETWORK
+
+fetch() {
+    _url="$1"
+    _ref="${2:-$referer}"
+    "$curl_exe" -fsSL --max-time 20 -A "$user_agent" -e "$_ref" "$_url" || return 1
+}
+
+search() {
+    "$curl_exe" -fsSL --max-time 20 -A "$user_agent" -e "$referer" -G "$base_url/" \
+        --data-urlencode "s=$1" --data-urlencode "post_type=anime" || return 1
+}
+
+ajax() {
+    _url="$1"
+    _ref="$2"
+    shift 2
+    "$curl_exe" -fsSL --max-time 20 -A "$user_agent" -e "$_ref" "$@" "$_url" || return 1
+}
+
+# UI
+
+menu() {
+    case "$menu_program" in
+        fzf) fzf --reverse --cycle --prompt "$1" ;;
+        rofi) rofi -sort -dmenu -i -p "$1" ;;
+        dmenu) dmenu -l 20 -p "$1" ;;
+        *) "$menu_program" "$1" ;;
+    esac
+}
+
+# Number the candidates and return the chosen original line.
+nth() {
+    _stdin="$(cat)"
+    [ -z "$_stdin" ] && return 1
+    _count="$(printf '%s\n' "$_stdin" | wc -l | tr -d '[:space:]')"
+    if [ "$_count" -eq 1 ]; then
+        printf '%s\n' "$_stdin"
+        return 0
+    fi
+    _sel="$(printf '%s\n' "$_stdin" | nl -w 2 -s ') ' | menu "$1")"
+    [ -z "$_sel" ] && return 1
+    _n="$(printf '%s\n' "$_sel" | sed -nE 's/^ *([0-9]+)\).*/\1/p')"
+    [ -z "$_n" ] && return 1
+    printf '%s\n' "$_stdin" | sed -n "${_n}p"
+}
+
+# RESOLVE
+
+resolve_video() {
+    _ep_url="$1"
+    _want="$2"
+    _page="$(fetch "$_ep_url")" || return 1
+
+    if [ -n "$_want" ] && [ "$_want" != "best" ]; then
+        _mirror="$(printf '%s\n' "$_page" | parse_mirrors | awk -F '\t' -v q="$_want" '$1 == q { print; exit }')"
+        if [ -n "$_mirror" ]; then
+            _json="$(b64_decode "$(printf '%s' "$_mirror" | cut -f3)")"
+            _id="$(printf '%s' "$_json" | json_field id)"
+            _i="$(printf '%s' "$_json" | json_field i)"
+            _q="$(printf '%s' "$_json" | json_field q)"
+            _nonce_json="$(ajax "$base_url/wp-admin/admin-ajax.php" "$_ep_url" \
+                --data "action=aa1208d27f29ca340c92c66d1926f13f")"
+            _nonce="$(printf '%s' "$_nonce_json" | json_field data)"
+            if [ -n "$_nonce" ]; then
+                _mirror_json="$(ajax "$base_url/wp-admin/admin-ajax.php" "$_ep_url" \
+                    --data-urlencode "id=$_id" \
+                    --data-urlencode "i=$_i" \
+                    --data-urlencode "q=$_q" \
+                    --data-urlencode "nonce=$_nonce" \
+                    --data-urlencode "action=2a3505c93b0035d3f455df82bf976b84")"
+                _html="$(b64_decode "$(printf '%s' "$_mirror_json" | json_field data)")"
+                _embed="$(printf '%s' "$_html" | parse_embed_url)"
+                if [ -n "$_embed" ]; then
+                    _video="$(fetch "$_embed" | parse_video_url)"
+                    if [ -n "$_video" ]; then
+                        quality_matches "$_video" "$_want" ||
+                            warn "Requested $_want, but this mirror served a different quality"
+                        printf '%s\n' "$_video"
+                        return 0
+                    fi
+                fi
+            fi
+        fi
+        warn "$_want not found, defaulting to best"
+    fi
+
+    _embed="$(printf '%s' "$_page" | parse_embed_url)"
+    [ -z "$_embed" ] && return 1
+    _video="$(fetch "$_embed" | parse_video_url)"
+    [ -n "$_video" ] || return 1
+    printf '%s\n' "$_video"
+}
+
+# PLAYBACK
+
+play_episode() {
+    _ep_url="$(printf '%s\n' "$_episode_maps" | awk -F '\t' -v e="$ep_no" '$1 == e { print $2; exit }')"
+    [ -z "$_ep_url" ] && die "Episode $ep_no not found"
+    info "Resolving $anime_title episode $ep_no..."
+    _video="$(resolve_video "$_ep_url" "$quality")" || die "No sources found for episode $ep_no"
+
+    case "$player_function" in
+        debug)
+            printf 'Video: %s\n' "$_video"
+            ;;
+        download)
+            _name="$(sanitize_filename "$anime_title Episode $ep_no")"
+            if command -v yt-dlp >/dev/null 2>&1; then
+                yt-dlp --referer "$referer" -o "$download_dir/$_name.mp4" "$_video" || return 1
+            else
+                fetch "$_video" >"$download_dir/$_name.mp4" || return 1
+            fi
+            info "Downloaded: $download_dir/$_name.mp4"
+            ;;
+        *vlc*)
+            nohup "$player_function" --http-referrer="$referer" --play-and-exit \
+                --meta-title="$anime_title Episode $ep_no" "$_video" >/dev/null 2>&1 &
+            ;;
+        *)
+            if [ "$no_detach" = 1 ]; then
+                "$player_function" --referrer="$referer" \
+                    --force-media-title="$anime_title Episode $ep_no" "$_video"
+            else
+                nohup "$player_function" --referrer="$referer" \
+                    --force-media-title="$anime_title Episode $ep_no" "$_video" >/dev/null 2>&1 &
+            fi
+            ;;
+    esac
+
+    history_set "$anime_url" "$anime_title" "$ep_no"
+}
+
+play_all() {
+    _range="$(expand_range "$ep_no" "$_ep_list")"
+    [ -z "$_range" ] && die "Invalid episode!"
+    for _one in $_range; do
+        ep_no="$_one"
+        play_episode
+    done
+}
+
+# SELECTION
+
+load_episodes() {
+    _page="$(fetch "$anime_url")" || die "Could not load $anime_url"
+    _episode_maps="$(printf '%s' "$_page" | parse_episodes)"
+    [ -z "$_episode_maps" ] && die "No episodes found"
+    _ep_list="$(printf '%s' "$_episode_maps" | cut -f1)"
+    if [ -n "$ep_no" ]; then
+        [ -z "$(expand_range "$ep_no" "$_ep_list")" ] && die "Invalid episode!"
+    else
+        _sel="$(printf '%s\n' "$_episode_maps" | nth "Select episode: ")"
+        [ -z "$_sel" ] && die "Invalid episode selection"
+        ep_no="$(printf '%s' "$_sel" | cut -f1)"
+    fi
+}
+
+load_search() {
+    if [ -z "$query" ]; then
+        printf 'Search anime: ' >&2
+        read -r query
+    fi
+    [ -z "$query" ] && die "No query given"
+    _results="$(search "$query")" || die "Search failed"
+    _anime_list="$(printf '%s' "$_results" | parse_search)"
+    [ -z "$_anime_list" ] && die "No results found"
+    if [ -n "$index" ]; then
+        _sel="$(printf '%s\n' "$_anime_list" | sed -n "${index}p")"
+    else
+        _sel="$(printf '%s\n' "$_anime_list" | nth "Select anime: ")"
+    fi
+    [ -z "$_sel" ] && die "Invalid anime selection"
+    anime_url="$(printf '%s' "$_sel" | cut -f1)"
+    anime_title="$(printf '%s' "$_sel" | cut -f2)"
+    load_episodes
+}
+
+load_history() {
+    [ -f "$histfile" ] || die "No history yet"
+    _hist="$(awk -F '\t' -v OFS='\t' '{ print $2 " - episode " $3, $1, $3 }' "$histfile")"
+    [ -z "$_hist" ] && die "No history yet"
+    if [ -n "$index" ]; then
+        _sel="$(printf '%s\n' "$_hist" | sed -n "${index}p")"
+    else
+        _sel="$(printf '%s\n' "$_hist" | nth "Continue watching: ")"
+    fi
+    [ -z "$_sel" ] && die "Invalid selection"
+    anime_url="$(printf '%s' "$_sel" | cut -f2)"
+    anime_title="$(printf '%s' "$_sel" | cut -f1 | sed 's/ - episode .*//')"
+    _stored="$(printf '%s' "$_sel" | cut -f3)"
+    _page="$(fetch "$anime_url")" || die "Could not load $anime_url"
+    _episode_maps="$(printf '%s' "$_page" | parse_episodes)"
+    [ -z "$_episode_maps" ] && die "No episodes found"
+    _ep_list="$(printf '%s' "$_episode_maps" | cut -f1)"
+    ep_no="$(printf '%s\n' "$_ep_list" | sed -n "/^${_stored}\$/{n;p;}")"
+    [ -z "$ep_no" ] && ep_no="$(printf '%s\n' "$_ep_list" | head -n 1)"
+}
+
+# CLI
+
+help_info() {
+    printf '%s\n' \
+        "Usage: ${0##*/} [options] [query]" \
+        "" \
+        "Options:" \
+        "  -q, --quality <best|720p|480p|360p>  Video quality (default: best)" \
+        "  -e, --episode, -r, --range <spec>    Episode number, range (5-7), or list (\"5 6\")" \
+        "  -d, --download                       Download instead of playing" \
+        "  -c, --continue                       Continue from history" \
+        "  -S, --select-nth <n>                 Pick the nth search/history result" \
+        "      --debug                          Print the resolved video URL and exit" \
+        "      --vlc                            Use vlc instead of mpv" \
+        "      --no-detach                      Keep the player in the foreground" \
+        "  -h, --help                           Show this help" \
+        "  -V, --version                        Show the version" \
+        "" \
+        "Environment: ANI_ID_BASE, ANI_ID_PLAYER, ANI_ID_QUALITY, ANI_ID_DOWNLOAD_DIR," \
+        "             ANI_ID_HIST_DIR, ANI_ID_MENU, ANI_ID_CURL" \
+        "" \
+        "Examples:" \
+        "  ${0##*/} one piece" \
+        "  ${0##*/} -q 480p -e 5-7 \"ao ashi season 2\"" \
+        "  ${0##*/} -c" \
+        "  ${0##*/} --debug -e 1 \"kimi no na wa\""
+    exit 0
+}
+
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -q | --quality)
+                [ $# -lt 2 ] && die "missing argument for $1"
+                quality="$2"
+                shift
+                ;;
+            -e | -r | --episode | --range)
+                [ $# -lt 2 ] && die "missing argument for $1"
+                ep_no="$2"
+                shift
+                ;;
+            -d | --download) player_function=download ;;
+            -c | --continue) source=history ;;
+            -S | --select-nth)
+                [ $# -lt 2 ] && die "missing argument for $1"
+                index="$2"
+                shift
+                ;;
+            --debug) player_function=debug ;;
+            --vlc) player_function=vlc ;;
+            --no-detach) no_detach=1 ;;
+            -h | --help) help_info ;;
+            -V | --version)
+                printf '%s\n' "$version_number"
+                exit 0
+                ;;
+            --)
+                shift
+                query="${query:+$query }$*"
+                break
+                ;;
+            -*) die "Unknown option: $1" ;;
+            *) query="${query:+$query }$1" ;;
+        esac
+        shift
+    done
+}
+
 main() {
-    printf 'ani-id-cli %s\n' "$version_number"
+    parse_args "$@"
+
+    dep_ch "$curl_exe"
+    dep_ch "$menu_program"
+
+    if [ -z "$player_function" ]; then
+        player_function="$(dep_ch_failover "mpv,vlc")" || die "No player found. Looked for mpv and vlc."
+    fi
+    case "$player_function" in
+        debug) ;;
+        download)
+            command -v yt-dlp >/dev/null 2>&1 || command -v "$curl_exe" >/dev/null 2>&1 ||
+                die "Neither yt-dlp nor curl found"
+            ;;
+        *) dep_ch "$player_function" ;;
+    esac
+
+    if [ ! -t 0 ]; then
+        command -v dmenu >/dev/null 2>&1 && menu_program=dmenu
+        command -v rofi >/dev/null 2>&1 && menu_program=rofi
+    fi
+
+    case "$source" in
+        history) load_history ;;
+        *) load_search ;;
+    esac
+
+    play_all
+
+    case "$player_function" in
+        debug | download) exit 0 ;;
+    esac
+
+    while :; do
+        _cmd="$(printf 'next\nreplay\nprevious\nselect\nchange_quality\nquit' |
+            nth "Playing $anime_title episode $ep_no... ")"
+        case "$_cmd" in
+            next)
+                ep_no="$(printf '%s\n' "$_ep_list" | sed -n "/^${ep_no}\$/{n;p;}")"
+                [ -z "$ep_no" ] && die "Out of range"
+                ;;
+            replay) ;;
+            previous)
+                ep_no="$(printf '%s\n' "$_ep_list" | sed -n "/^${ep_no}\$/{g;1!p;};h")"
+                [ -z "$ep_no" ] && die "Out of range"
+                ;;
+            select)
+                _sel="$(printf '%s\n' "$_episode_maps" | nth "Select episode: ")"
+                [ -z "$_sel" ] && continue
+                ep_no="$(printf '%s' "$_sel" | cut -f1)"
+                ;;
+            change_quality)
+                _newq="$(printf 'best\n720p\n480p\n360p' | nth "Select quality: ")"
+                [ -z "$_newq" ] && continue
+                quality="$_newq"
+                ;;
+            *) exit 0 ;;
+        esac
+        play_all
+    done
 }
 
 # Sourced by the test runner: define functions, do not run.

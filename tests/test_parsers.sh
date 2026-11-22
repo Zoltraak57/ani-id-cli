@@ -15,6 +15,7 @@ assert_eq "Ao Ashi Season 2 Episode 1 & Special Subtitle Indonesia" "$(parse_epi
 assert_eq "https://desustream.net/dstream/odcdn/?id=TXdXSlhBdGVKMGNnWkQyZHF4NWR0akQ1S1JFdHdhWG5oV3UzL1ZsbW05Ymw3cm9xSzBsUkdTOVZNai9zalVubw==" "$(parse_embed_url <fixtures/episode.html)" "parse_embed_url ignores ad iframes"
 assert_eq "https://cdn.odcloud.net/anime/Otakudesu.io_Aoshi.S2--01_720p.mp4" "$(parse_video_url <fixtures/embed.html)" "parse_video_url prefers videoURL over playerjs file"
 assert_eq "https://archive.org/download/perempuan-dewasa-yang-sdwa/Otakudesu.io_Aoshi.S2--01_720p.mp4" "$(parse_video_url <fixtures/embed_playerjs.html)" "parse_video_url falls back to playerjs file"
+assert_eq "https://desustream.net/dstream/arcg/?id=NFFPQjBvaDFvd2FCRDQySUpKNy9NNis3ZVRNb21FQWRTSVBjZm1QTzJESW1OTWdnbnVmbjgyenhkZ1VtUUFwUE1vd0plQjZqRlpmaER1bW5YR0tLUlE9PQ==" "$(parse_embed_url <fixtures/mirror.html)" "parse_embed_url falls back to the only iframe in mirror HTML"
 
 _expected_mirrors="360p	vidhide	eyJpZCI6MjA2MTMzLCJpIjowLCJxIjoiMzYwcCJ9
 360p	mega	eyJpZCI6MjA2MTMzLCJpIjoxLCJxIjoiMzYwcCJ9
@@ -28,5 +29,7 @@ _expected_mirrors="360p	vidhide	eyJpZCI6MjA2MTMzLCJpIjowLCJxIjoiMzYwcCJ9
 assert_eq "$_expected_mirrors" "$(parse_mirrors <fixtures/episode.html)" "parse_mirrors prints quality<TAB>server<TAB>data-content"
 
 assert_eq "360p" "$(printf '{"id":206133,"i":0,"q":"360p"}' | json_field q)" "json_field reads a string value"
+assert_eq "206133" "$(printf '{"id":206133,"i":0,"q":"360p"}' | json_field id)" "json_field reads a numeric value"
+assert_eq "https://desustream.net/dstream/arcg/?id=X" "$(printf '%s' '{"data":"https:\/\/desustream.net\/dstream\/arcg\/?id=X"}' | json_field data)" "json_field unescapes JSON slashes"
 _b64_roundtrip=$(printf '{"a":1}' | base64 | tr -d '\n')
 assert_eq '{"a":1}' "$(b64_decode "$_b64_roundtrip")" "b64_decode decodes base64"

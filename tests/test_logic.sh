@@ -24,3 +24,8 @@ history_set "https://otakudesu.blog/anime/x/" "X" "3"
 assert_eq "3" "$(history_get "https://otakudesu.blog/anime/x/")" "history_set replaces an existing row"
 assert_eq "1" "$(wc -l <"$histfile" | tr -d '[:space:]')" "history_set keeps one row per anime"
 rm -rf "$_tmp_hist"
+
+assert_eq "Ao_Ashi_S2_Episode_1" "$(sanitize_filename 'Ao/Ashi:S2*Episode?1')" "sanitize_filename replaces unsafe characters"
+assert_eq "1" "$( (fetch 'http://127.0.0.1:9/' >/dev/null 2>&1); echo $? )" "fetch returns non-zero on connection error"
+assert_eq "0" "$(quality_matches 'https://cdn.example/x_720p.mp4' '720p'; echo $?)" "quality_matches finds the requested quality in the URL"
+assert_eq "1" "$(quality_matches 'https://cdn.example/x_720p.mp4' '480p'; echo $?)" "quality_matches rejects a different quality"
