@@ -21,6 +21,30 @@ warn() {
     printf "\33[2K\r\033[1;33m%s\033[0m\n" "$*" >&2
 }
 
+# SCRAPING
+
+decode_entities() {
+    sed -e "s/&#0*39;/'/g" \
+        -e 's/&#8217;/'"'"'/g' \
+        -e 's/&#8211;/-/g' \
+        -e 's/&#8212;/--/g' \
+        -e 's/&#8220;/"/g' \
+        -e 's/&#8221;/"/g' \
+        -e 's/&quot;/"/g' \
+        -e 's/&lt;/</g' \
+        -e 's/&gt;/>/g' \
+        -e 's/&amp;/\&/g'
+}
+
+# search results: url<TAB>title
+parse_search() {
+    tr '\n' ' ' |
+        sed 's|<h2><a |\
+<h2><a |g' |
+        sed -nE 's|.*<h2><a href="([^"]+)"[^>]*>(.*)</a></h2>.*|\1\t\2|p' |
+        decode_entities
+}
+
 main() {
     printf 'ani-id-cli %s\n' "$version_number"
 }
