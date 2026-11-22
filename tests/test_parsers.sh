@@ -11,3 +11,7 @@ _expected_episodes="1	https://otakudesu.blog/episode/asohia-s2-episode-1-sub-ind
 1000	https://otakudesu.blog/episode/asohia-s2-episode-1000-sub-indo/"
 assert_eq "$_expected_episodes" "$(parse_episodes <fixtures/anime.html)" "parse_episodes prints episode<TAB>url ascending, including decimals"
 assert_eq "Ao Ashi Season 2 Episode 1 & Special Subtitle Indonesia" "$(parse_episode_title <fixtures/episode.html)" "parse_episode_title decodes entities"
+
+assert_eq "https://desustream.net/dstream/odcdn/?id=TXdXSlhBdGVKMGNnWkQyZHF4NWR0akQ1S1JFdHdhWG5oV3UzL1ZsbW05Ymw3cm9xSzBsUkdTOVZNai9zalVubw==" "$(parse_embed_url <fixtures/episode.html)" "parse_embed_url ignores ad iframes"
+assert_eq "https://cdn.odcloud.net/anime/Otakudesu.io_Aoshi.S2--01_720p.mp4" "$(parse_video_url <fixtures/embed.html)" "parse_video_url prefers videoURL over playerjs file"
+assert_eq "https://archive.org/download/perempuan-dewasa-yang-sdwa/Otakudesu.io_Aoshi.S2--01_720p.mp4" "$(parse_video_url <fixtures/embed_playerjs.html)" "parse_video_url falls back to playerjs file"

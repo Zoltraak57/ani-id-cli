@@ -65,6 +65,25 @@ parse_episode_title() {
         decode_entities
 }
 
+# primary player iframe on the episode page
+parse_embed_url() {
+    tr '\n' ' ' |
+        sed 's|<div class="player-embed"|\
+<div class="player-embed"|g' |
+        sed -n '/<div class="player-embed"/p' |
+        grep -oE '<iframe[^>]*src="[^"]+"' |
+        head -n 1 |
+        sed -E 's|.*src="([^"]+)".*|\1|'
+}
+
+# direct mp4 from the embed page
+parse_video_url() {
+    _page="$(tr '\n' ' ')"
+    _url="$(printf '%s' "$_page" | sed -nE 's|.*videoURL[[:space:]]*=[[:space:]]*"([^"]+)".*|\1|p' | head -n 1)"
+    [ -z "$_url" ] && _url="$(printf '%s' "$_page" | sed -nE 's|.*file[[:space:]]*:[[:space:]]*"([^"]+\.mp4[^"]*)".*|\1|p' | head -n 1)"
+    printf '%s\n' "$_url"
+}
+
 main() {
     printf 'ani-id-cli %s\n' "$version_number"
 }
