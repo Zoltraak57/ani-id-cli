@@ -16,6 +16,10 @@ berikutnya.
 - Riwayat tontonan dan lanjut dari episode berikutnya (`-c`).
 - Rentang episode: `-e 5-7`, `-e "5 6"`, `-e -1` (terakhir).
 
+## Demo
+
+Lihat video demo: [demo/ani-id-cli.mp4](demo/ani-id-cli.mp4)
+
 ## Dependensi
 
 Wajib:
