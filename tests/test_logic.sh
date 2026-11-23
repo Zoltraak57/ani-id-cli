@@ -35,3 +35,7 @@ assert_eq "https://otakudesu.blog" "$(ANI_ID_BASE='https://otakudesu.blog/' ANI_
 assert_eq "3" "$(next_after 2 "$_eps")" "next_after returns the next episode"
 assert_eq "5" "$(next_after 5 "$_eps")" "next_after keeps the last episode instead of wrapping"
 assert_eq "1" "$(next_after 99 "$_eps")" "next_after falls back to the first episode when the stored one is gone"
+
+assert_eq "Horimiya" "$(normalize_query '"Horimiya"')" "normalize_query strips double quotes"
+assert_eq "Horimiya" "$(normalize_query "'Horimiya'")" "normalize_query strips single quotes"
+assert_eq "Kimi no Na wa" "$(normalize_query '  Kimi no Na wa  ')" "normalize_query trims surrounding spaces"

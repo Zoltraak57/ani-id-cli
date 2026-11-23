@@ -67,6 +67,9 @@ ani-id-cli -c
 ani-id-cli --debug -e 1 "ao ashi season 2"
 ```
 
+Tanda kutip di awal/akhir judul otomatis dihapus, jadi `"Horimiya"` dan
+`Horimiya` sama-sama bisa. Query juga di-trim dari spasi berlebih.
+
 ### Opsi
 
 | Opsi | Keterangan |

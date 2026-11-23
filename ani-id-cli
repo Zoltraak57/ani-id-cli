@@ -106,6 +106,7 @@ parse_video_url() {
     _page="$(tr '\n' ' ')"
     _url="$(printf '%s' "$_page" | sed -nE 's|.*videoURL[[:space:]]*=[[:space:]]*"([^"]+)".*|\1|p' | head -n 1)"
     [ -z "$_url" ] && _url="$(printf '%s' "$_page" | sed -nE 's|.*file[[:space:]]*:[[:space:]]*"([^"]+\.mp4[^"]*)".*|\1|p' | head -n 1)"
+    [ -z "$_url" ] && _url="$(printf '%s' "$_page" | sed -nE 's|.*<source[^>]*src="([^"]+)".*|\1|p' | head -n 1 | decode_entities)"
     printf '%s\n' "$_url"
 }
 
@@ -221,6 +222,11 @@ quality_matches() {
         *"$2"*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+normalize_query() {
+    printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+        -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
 }
 
 # NETWORK
@@ -395,6 +401,7 @@ load_search() {
         printf 'Search anime: ' >&2
         read -r query
     fi
+    query="$(normalize_query "$query")"
     [ -z "$query" ] && die "No query given"
     _results="$(search "$query")" || die "Search failed"
     _anime_list="$(printf '%s' "$_results" | parse_search)"
