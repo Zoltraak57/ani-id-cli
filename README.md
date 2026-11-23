@@ -1,3 +1,10 @@
+## Demo
+
+
+![Demo ani-id-cli](demo/ani-id-cli.webp)
+
+
+
 # ani-id-cli
 
 CLI shell untuk mencari, streaming, dan mengunduh anime subtitle Indonesia
@@ -15,11 +22,6 @@ berikutnya.
   catatan di bawah).
 - Riwayat tontonan dan lanjut dari episode berikutnya (`-c`).
 - Rentang episode: `-e 5-7`, `-e "5 6"`, `-e -1` (terakhir).
-
-## Demo
-
-
-![Demo ani-id-cli](demo/ani-id-cli.webp)
 
 ## Dependensi
 
