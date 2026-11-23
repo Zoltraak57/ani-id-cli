@@ -18,11 +18,8 @@ berikutnya.
 
 ## Demo
 
-## Demo
 
 ![Demo ani-id-cli](demo/ani-id-cli.webp)
-
-[Video lengkap dengan audio (MP4)](demo/ani-id-cli.mp4)
 
 ## Dependensi
 
