@@ -18,7 +18,9 @@ berikutnya.
 
 ## Demo
 
-Lihat video demo: [demo/ani-id-cli.mp4](demo/ani-id-cli.mp4)
+<video src="https://raw.githubusercontent.com/Zoltraak57/ani-id-cli/main/demo/ani-id-cli.mp4" controls width="100%"></video>
+
+[Kalau video tidak muncul, buka file demo](demo/ani-id-cli.mp4)
 
 ## Dependensi
 
