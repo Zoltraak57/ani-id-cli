@@ -49,7 +49,7 @@ pkg install curl fzf mpv yt-dlp
 ## Instalasi
 
 ```sh
-git clone <repo-url> ani-id-cli
+git clone <https://github.com/Zoltraak57/ani-id-cli.git> ani-id-cli
 cd ani-id-cli
 chmod +x ani-id-cli
 install -Dm755 ani-id-cli ~/.local/bin/ani-id-cli
