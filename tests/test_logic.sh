@@ -27,8 +27,10 @@ rm -rf "$_tmp_hist"
 
 assert_eq "Ao_Ashi_S2_Episode_1" "$(sanitize_filename 'Ao/Ashi:S2*Episode?1')" "sanitize_filename replaces unsafe characters"
 assert_eq "1" "$( (fetch 'http://127.0.0.1:9/' >/dev/null 2>&1); echo $? )" "fetch returns non-zero on connection error"
+assert_eq "1" "$( (video_ok 'http://127.0.0.1:9/x' >/dev/null 2>&1); echo $? )" "video_ok rejects an unreachable URL"
 assert_eq "0" "$(quality_matches 'https://cdn.example/x_720p.mp4' '720p'; echo $?)" "quality_matches finds the requested quality in the URL"
 assert_eq "1" "$(quality_matches 'https://cdn.example/x_720p.mp4' '480p'; echo $?)" "quality_matches rejects a different quality"
+assert_eq "0" "$(quality_matches 'https://rr.example/videoplayback?id=1' '480p'; echo $?)" "quality_matches trusts URLs without a quality token"
 
 assert_eq "https://otakudesu.blog" "$(ANI_ID_BASE='https://otakudesu.blog/' ANI_ID_CLI_LIB=1 sh -c '. ../ani-id-cli; printf "%s" "$base_url"')" "base_url drops a trailing slash"
 

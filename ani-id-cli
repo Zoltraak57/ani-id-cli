@@ -129,6 +129,14 @@ parse_mirrors() {
         done
 }
 
+# mirror entries sorted best quality first: 720p, then 480p, then 360p
+rank_mirrors() {
+    awk -F '\t' '{
+        r = ($1 == "720p" ? 3 : $1 == "480p" ? 2 : $1 == "360p" ? 1 : 0)
+        printf "%d\t%d\t%s\n", r, NR, $0
+    }' | sort -k1,1rn -k2,2n | cut -f3-
+}
+
 json_field() {
     sed -nE 's|.*"'"$1"'"[[:space:]]*:[[:space:]]*"([^"]*)".*|\1|p; s|.*"'"$1"'"[[:space:]]*:[[:space:]]*([0-9]+).*|\1|p' |
         sed -e 's|\\/|/|g' -e 's|\\"|"|g'
@@ -220,7 +228,9 @@ sanitize_filename() {
 quality_matches() {
     case "$1" in
         *"$2"*) return 0 ;;
-        *) return 1 ;;
+        *360p* | *480p* | *720p*) return 1 ;;
+        # no quality token in the URL; trust the mirror label
+        *) return 0 ;;
     esac
 }
 
@@ -235,6 +245,23 @@ fetch() {
     _url="$1"
     _ref="${2:-$referer}"
     "$curl_exe" -fsSL --max-time 20 -A "$user_agent" -e "$_ref" "$_url" || return 1
+}
+
+# Confirm a resolved URL really responds before handing it to the player.
+# Some sources reject requests without a browser User-Agent; dead ones fall
+# through to the next mirror.
+video_ok() {
+    _code="$("$curl_exe" -sIL --max-time 20 -A "$user_agent" -e "$referer" \
+        -o /dev/null -w '%{http_code}' "$1" 2>/dev/null)"
+    case "$_code" in
+        200|206) return 0 ;;
+    esac
+    _code="$("$curl_exe" -sL --max-time 20 -A "$user_agent" -e "$referer" \
+        -r 0-0 -o /dev/null -w '%{http_code}' "$1" 2>/dev/null)"
+    case "$_code" in
+        200|206) return 0 ;;
+    esac
+    return 1
 }
 
 search() {
@@ -278,47 +305,87 @@ nth() {
 
 # RESOLVE
 
+# resolve one mirror entry through the admin-ajax nonce flow
+resolve_mirror() {
+    _ep="$1"
+    _nonce="$2"
+    _data="$3"
+    [ -n "$_nonce" ] || return 1
+    _json="$(b64_decode "$_data")"
+    _id="$(printf '%s' "$_json" | json_field id)"
+    _i="$(printf '%s' "$_json" | json_field i)"
+    _q="$(printf '%s' "$_json" | json_field q)"
+    [ -n "$_id" ] || return 1
+    _mirror_json="$(ajax "$base_url/wp-admin/admin-ajax.php" "$_ep" \
+        --data-urlencode "id=$_id" \
+        --data-urlencode "i=$_i" \
+        --data-urlencode "q=$_q" \
+        --data-urlencode "nonce=$_nonce" \
+        --data-urlencode "action=2a3505c93b0035d3f455df82bf976b84")"
+    _html="$(b64_decode "$(printf '%s' "$_mirror_json" | json_field data)")"
+    _embed="$(printf '%s' "$_html" | parse_embed_url)"
+    [ -n "$_embed" ] || return 1
+    fetch "$_embed" | parse_video_url
+}
+
+# first playable mirror; $4 limits to one quality, empty means every quality
+resolve_from_mirrors() {
+    _ep="$1"
+    _nonce="$2"
+    _page="$3"
+    _want="$4"
+    [ -n "$_nonce" ] || return 1
+    _list="$(printf '%s\n' "$_page" | parse_mirrors)"
+    if [ -n "$_want" ]; then
+        _list="$(printf '%s\n' "$_list" | awk -F '\t' -v w="$_want" '$1 == w')"
+    else
+        _list="$(printf '%s\n' "$_list" | rank_mirrors)"
+    fi
+    [ -n "$_list" ] || return 1
+    while IFS="$(printf '\t')" read -r _q _srv _data; do
+        [ -z "$_q" ] && continue
+        _video="$(resolve_mirror "$_ep" "$_nonce" "$_data")"
+        if [ -n "$_video" ] && video_ok "$_video"; then
+            if [ -n "$_want" ]; then
+                quality_matches "$_video" "$_want" ||
+                    warn "Requested $_want, but this mirror served a different quality"
+            fi
+            printf '%s\n' "$_video"
+            return 0
+        fi
+    done <<EOF
+$_list
+EOF
+    return 1
+}
+
 resolve_video() {
     _ep_url="$1"
     _want="$2"
     _page="$(fetch "$_ep_url")" || return 1
 
+    _nonce="$(ajax "$base_url/wp-admin/admin-ajax.php" "$_ep_url" \
+        --data "action=aa1208d27f29ca340c92c66d1926f13f" | json_field data)"
+
     if [ -n "$_want" ] && [ "$_want" != "best" ]; then
-        _mirror="$(printf '%s\n' "$_page" | parse_mirrors | awk -F '\t' -v q="$_want" '$1 == q { print; exit }')"
-        if [ -n "$_mirror" ]; then
-            _json="$(b64_decode "$(printf '%s' "$_mirror" | cut -f3)")"
-            _id="$(printf '%s' "$_json" | json_field id)"
-            _i="$(printf '%s' "$_json" | json_field i)"
-            _q="$(printf '%s' "$_json" | json_field q)"
-            _nonce_json="$(ajax "$base_url/wp-admin/admin-ajax.php" "$_ep_url" \
-                --data "action=aa1208d27f29ca340c92c66d1926f13f")"
-            _nonce="$(printf '%s' "$_nonce_json" | json_field data)"
-            if [ -n "$_nonce" ]; then
-                _mirror_json="$(ajax "$base_url/wp-admin/admin-ajax.php" "$_ep_url" \
-                    --data-urlencode "id=$_id" \
-                    --data-urlencode "i=$_i" \
-                    --data-urlencode "q=$_q" \
-                    --data-urlencode "nonce=$_nonce" \
-                    --data-urlencode "action=2a3505c93b0035d3f455df82bf976b84")"
-                _html="$(b64_decode "$(printf '%s' "$_mirror_json" | json_field data)")"
-                _embed="$(printf '%s' "$_html" | parse_embed_url)"
-                if [ -n "$_embed" ]; then
-                    _video="$(fetch "$_embed" | parse_video_url)"
-                    if [ -n "$_video" ]; then
-                        quality_matches "$_video" "$_want" ||
-                            warn "Requested $_want, but this mirror served a different quality"
-                        printf '%s\n' "$_video"
-                        return 0
-                    fi
-                fi
-            fi
+        _video="$(resolve_from_mirrors "$_ep_url" "$_nonce" "$_page" "$_want")"
+        if [ -n "$_video" ]; then
+            printf '%s\n' "$_video"
+            return 0
         fi
         warn "$_want not found, defaulting to best"
     fi
 
     _embed="$(printf '%s' "$_page" | parse_embed_url)"
-    [ -z "$_embed" ] && return 1
-    _video="$(fetch "$_embed" | parse_video_url)"
+    if [ -n "$_embed" ]; then
+        _video="$(fetch "$_embed" | parse_video_url)"
+        if [ -n "$_video" ] && video_ok "$_video"; then
+            printf '%s\n' "$_video"
+            return 0
+        fi
+    fi
+
+    _video="$(resolve_from_mirrors "$_ep_url" "$_nonce" "$_page" "")"
     [ -n "$_video" ] || return 1
     printf '%s\n' "$_video"
 }
@@ -344,23 +411,25 @@ play_episode() {
             _name="$(sanitize_filename "$anime_title Episode $ep_no")"
             mkdir -p "$download_dir" || return 1
             if command -v yt-dlp >/dev/null 2>&1; then
-                yt-dlp --referer "$referer" -o "$download_dir/$_name.mp4" "$_video" || return 1
+                yt-dlp --user-agent "$user_agent" --referer "$referer" \
+                    -o "$download_dir/$_name.mp4" "$_video" || return 1
             else
                 fetch "$_video" >"$download_dir/$_name.mp4" || return 1
             fi
             info "Downloaded: $download_dir/$_name.mp4"
             ;;
         *vlc*)
-            nohup "$player_function" --http-referrer="$referer" --play-and-exit \
+            nohup "$player_function" --http-referrer="$referer" \
+                --http-user-agent="$user_agent" --play-and-exit \
                 --meta-title="$anime_title Episode $ep_no" "$_video" >/dev/null 2>&1 &
             ;;
         *)
             if [ "$no_detach" = 1 ]; then
-                "$player_function" --referrer="$referer" \
-                    --force-media-title="$anime_title Episode $ep_no" "$_video"
+                "$player_function" --user-agent="$user_agent" --referrer="$referer" \
+                    --ytdl=no --force-media-title="$anime_title Episode $ep_no" "$_video"
             else
-                nohup "$player_function" --referrer="$referer" \
-                    --force-media-title="$anime_title Episode $ep_no" "$_video" >/dev/null 2>&1 &
+                nohup "$player_function" --user-agent="$user_agent" --referrer="$referer" \
+                    --ytdl=no --force-media-title="$anime_title Episode $ep_no" "$_video" >/dev/null 2>&1 &
             fi
             ;;
     esac

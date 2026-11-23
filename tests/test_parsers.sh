@@ -28,6 +28,7 @@ _expected_mirrors="360p	vidhide	eyJpZCI6MjA2MTMzLCJpIjowLCJxIjoiMzYwcCJ9
 720p	vidhide	eyJpZCI6MjA2MTMzLCJpIjoyLCJxIjoiNzIwcCJ9
 720p	mega	eyJpZCI6MjA2MTMzLCJpIjozLCJxIjoiNzIwcCJ9"
 assert_eq "$_expected_mirrors" "$(parse_mirrors <fixtures/episode.html)" "parse_mirrors prints quality<TAB>server<TAB>data-content"
+assert_eq "$(printf '720p\tfilelions\tY\n720p\todstreamhd\tW\n480p\tdesudesu2\tX\n360p\tmega\tZ')" "$(printf '480p\tdesudesu2\tX\n720p\tfilelions\tY\n360p\tmega\tZ\n720p\todstreamhd\tW\n' | rank_mirrors)" "rank_mirrors sorts 720p, then 480p, then 360p, keeping page order"
 
 assert_eq "360p" "$(printf '{"id":206133,"i":0,"q":"360p"}' | json_field q)" "json_field reads a string value"
 assert_eq "206133" "$(printf '{"id":206133,"i":0,"q":"360p"}' | json_field id)" "json_field reads a numeric value"

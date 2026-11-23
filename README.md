@@ -107,6 +107,16 @@ menyajikan file 720p walaupun labelnya 480p; CLI akan memberi peringatan
 bila kualitas yang didapat tidak cocok. Mirror `vidhide` dan `mega` belum
 diresolve karena memakai player pihak ketiga.
 
+Sebelum diputar, URL video dicek dulu. Kalau sumbernya mati (misalnya 403),
+CLI mencoba mirror lain dan memilih yang benar-benar bisa diputar.
+
+## Catatan playback
+
+Beberapa sumber (terutama `googlevideo`) menolak request tanpa User-Agent
+browser. Karena itu CLI mengirim User-Agent dan Referer yang sama ke `mpv`,
+`vlc`, `yt-dlp`, dan `curl`, serta mematikan hook yt-dlp bawaan `mpv`
+(`--ytdl=no`). Tanpa ini, `mpv` bisa terbuka lalu langsung gagal memutar.
+
 ## Testing
 
 ```sh
