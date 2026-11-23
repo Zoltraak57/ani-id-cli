@@ -29,3 +29,9 @@ assert_eq "Ao_Ashi_S2_Episode_1" "$(sanitize_filename 'Ao/Ashi:S2*Episode?1')" "
 assert_eq "1" "$( (fetch 'http://127.0.0.1:9/' >/dev/null 2>&1); echo $? )" "fetch returns non-zero on connection error"
 assert_eq "0" "$(quality_matches 'https://cdn.example/x_720p.mp4' '720p'; echo $?)" "quality_matches finds the requested quality in the URL"
 assert_eq "1" "$(quality_matches 'https://cdn.example/x_720p.mp4' '480p'; echo $?)" "quality_matches rejects a different quality"
+
+assert_eq "https://otakudesu.blog" "$(ANI_ID_BASE='https://otakudesu.blog/' ANI_ID_CLI_LIB=1 sh -c '. ../ani-id-cli; printf "%s" "$base_url"')" "base_url drops a trailing slash"
+
+assert_eq "3" "$(next_after 2 "$_eps")" "next_after returns the next episode"
+assert_eq "5" "$(next_after 5 "$_eps")" "next_after keeps the last episode instead of wrapping"
+assert_eq "1" "$(next_after 99 "$_eps")" "next_after falls back to the first episode when the stored one is gone"

@@ -5,6 +5,7 @@
 version_number="0.1.0"
 
 base_url="${ANI_ID_BASE:-https://otakudesu.blog}"
+base_url="${base_url%/}"
 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 referer="${base_url%/}/"
 
@@ -169,6 +170,19 @@ history_get() {
     awk -F '\t' -v u="$1" '$1 == u { ep = $3 } END { if (ep != "") print ep }' "$histfile"
 }
 
+# next episode after $1 in list $2; stay on $1 if it is the last,
+# fall back to the first episode if $1 is no longer in the list.
+next_after() {
+    _next="$(printf '%s\n' "$2" | sed -n "/^${1}\$/{n;p;}")"
+    if [ -n "$_next" ]; then
+        printf '%s\n' "$_next"
+    elif printf '%s\n' "$2" | grep -qx "$1"; then
+        printf '%s\n' "$1"
+    else
+        printf '%s\n' "$2" | head -n 1
+    fi
+}
+
 history_set() {
     mkdir -p "$hist_dir" || return 1
     [ -f "$histfile" ] || : >"$histfile"
@@ -311,12 +325,18 @@ play_episode() {
     info "Resolving $anime_title episode $ep_no..."
     _video="$(resolve_video "$_ep_url" "$quality")" || die "No sources found for episode $ep_no"
 
+    if [ "$no_detach" = 0 ] && [ "$player_function" != "debug" ] && [ "$player_function" != "download" ]; then
+        # Wait for the previous detached player before starting the next episode.
+        wait
+    fi
+
     case "$player_function" in
         debug)
             printf 'Video: %s\n' "$_video"
             ;;
         download)
             _name="$(sanitize_filename "$anime_title Episode $ep_no")"
+            mkdir -p "$download_dir" || return 1
             if command -v yt-dlp >/dev/null 2>&1; then
                 yt-dlp --referer "$referer" -o "$download_dir/$_name.mp4" "$_video" || return 1
             else
@@ -339,7 +359,10 @@ play_episode() {
             ;;
     esac
 
-    history_set "$anime_url" "$anime_title" "$ep_no"
+    case "$player_function" in
+        debug) ;;
+        *) history_set "$anime_url" "$anime_title" "$ep_no" ;;
+    esac
 }
 
 play_all() {
@@ -404,8 +427,7 @@ load_history() {
     _episode_maps="$(printf '%s' "$_page" | parse_episodes)"
     [ -z "$_episode_maps" ] && die "No episodes found"
     _ep_list="$(printf '%s' "$_episode_maps" | cut -f1)"
-    ep_no="$(printf '%s\n' "$_ep_list" | sed -n "/^${_stored}\$/{n;p;}")"
-    [ -z "$ep_no" ] && ep_no="$(printf '%s\n' "$_ep_list" | head -n 1)"
+    ep_no="$(next_after "$_stored" "$_ep_list")"
 }
 
 # CLI
@@ -480,6 +502,11 @@ parse_args() {
 main() {
     parse_args "$@"
 
+    if [ ! -t 0 ]; then
+        command -v dmenu >/dev/null 2>&1 && menu_program=dmenu
+        command -v rofi >/dev/null 2>&1 && menu_program=rofi
+    fi
+
     dep_ch "$curl_exe"
     dep_ch "$menu_program"
 
@@ -494,11 +521,6 @@ main() {
             ;;
         *) dep_ch "$player_function" ;;
     esac
-
-    if [ ! -t 0 ]; then
-        command -v dmenu >/dev/null 2>&1 && menu_program=dmenu
-        command -v rofi >/dev/null 2>&1 && menu_program=rofi
-    fi
 
     case "$source" in
         history) load_history ;;
