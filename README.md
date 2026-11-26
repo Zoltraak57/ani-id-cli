@@ -5,8 +5,9 @@ Indonesia dari [otakudesu.blog](https://otakudesu.blog). Alurnya mengikuti
 `ani-cli`: cari judul → pilih anime → pilih episode → putar, lalu lanjut ke
 episode berikutnya.
 
-Tanpa browser dan tanpa aplikasi GUI. Satu file `sh` yang jalan di Linux,
-macOS, dan Termux, dengan `fzf` sebagai menu dan `mpv`/`vlc` sebagai player.
+Tanpa browser dan tanpa aplikasi GUI. Satu file `sh` untuk Linux dan macOS,
+dengan `fzf` sebagai menu dan `mpv`/`vlc` sebagai player. Di Termux, pencarian
+dan unduhan jalan; playback terbatas (lihat catatan Termux di bawah).
 
 ## Demo
 
@@ -50,8 +51,15 @@ sudo pacman -S curl fzf mpv yt-dlp
 Termux:
 
 ```sh
-pkg install curl fzf mpv yt-dlp
+pkg install curl fzf mpv python
+pip install yt-dlp
 ```
+
+Catatan Termux: `mpv` dari repo Termux di-build dengan output terminal
+(`libcaca`/`libsixel`), bukan jendela video, dan skrip melepas player dengan
+`nohup ... &` yang kehilangan TTY. Jadi playback di Termux perlu `--no-detach`
+dan tetap tampil di terminal. Pencarian, menu, riwayat, dan unduhan berjalan
+normal. Paket `yt-dlp` tidak ada di repo Termux, jadi dipasang lewat `pip`.
 
 ## Instalasi
 
