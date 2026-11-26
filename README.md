@@ -187,6 +187,10 @@ sh tests/run.sh
 Tes tidak menyentuh jaringan; semua parser diuji dengan fixture HTML di
 `tests/fixtures`.
 
+## Lisensi
+
+MIT. Lihat [LICENSE](LICENSE).
+
 ## Disclaimer
 
 Proyek ini hanya alat bantu klien. Tidak ada video yang di-host di sini.
