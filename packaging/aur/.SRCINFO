@@ -1,0 +1,16 @@
+pkgbase = ani-id-cli
+	pkgdesc = CLI shell POSIX untuk mencari, streaming, dan mengunduh anime subtitle Indonesia dari Otakudesu
+	pkgver = 0.2.0
+	pkgrel = 1
+	url = https://github.com/Zoltraak57/ani-id-cli
+	arch = any
+	license = MIT
+	depends = curl
+	depends = fzf
+	depends = mpv
+	optdepends = vlc: player alternatif
+	optdepends = yt-dlp: unduh episode
+	source = ani-id-cli-0.2.0.tar.gz::https://github.com/Zoltraak57/ani-id-cli/archive/refs/tags/v0.2.0.tar.gz
+	sha256sums = be01f716848ac69a0010d9d418cd4cd88eb664604aa51d70a2beeb133d7705bc
+
+pkgname = ani-id-cli
