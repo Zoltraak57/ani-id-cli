@@ -5,9 +5,9 @@ Indonesia dari [otakudesu.blog](https://otakudesu.blog). Alurnya mengikuti
 `ani-cli`: cari judul → pilih anime → pilih episode → putar, lalu lanjut ke
 episode berikutnya.
 
-Tanpa browser dan tanpa aplikasi GUI. Satu file `sh` untuk Linux dan macOS,
-dengan `fzf` sebagai menu dan `mpv`/`vlc` sebagai player. Di Termux, pencarian
-dan unduhan jalan; playback terbatas (lihat catatan Termux di bawah).
+Tanpa browser dan tanpa aplikasi GUI. Satu file `sh` untuk Linux, macOS, dan
+Termux, dengan `fzf` sebagai menu dan `mpv`/`vlc` sebagai player. Di Android,
+CLI meluncurkan APK mpv atau VLC lewat `am`.
 
 ## Demo
 
@@ -48,18 +48,16 @@ Arch:
 sudo pacman -S curl fzf mpv yt-dlp
 ```
 
-Termux:
+Termux (Android):
 
 ```sh
-pkg install curl fzf mpv python
+pkg up -y
+pkg install curl fzf python termux-am
 pip install yt-dlp
 ```
 
-Catatan Termux: `mpv` dari repo Termux di-build dengan output terminal
-(`libcaca`/`libsixel`), bukan jendela video, dan skrip melepas player dengan
-`nohup ... &` yang kehilangan TTY. Jadi playback di Termux perlu `--no-detach`
-dan tetap tampil di terminal. Pencarian, menu, riwayat, dan unduhan berjalan
-normal. Paket `yt-dlp` tidak ada di repo Termux, jadi dipasang lewat `pip`.
+Player tidak dipasang lewat `pkg`; gunakan APK mpv atau VLC dari Play Store
+atau F-Droid. Lihat [Termux / Android](#termux--android).
 
 ## Instalasi
 
@@ -71,6 +69,53 @@ install -Dm755 ani-id-cli ~/.local/bin/ani-id-cli
 ```
 
 Pastikan `~/.local/bin` ada di `PATH`.
+
+## Termux / Android
+
+`ani-id-cli` belum ada di repo Termux, jadi dipasang manual. Pasang
+dependensinya dulu:
+
+```sh
+pkg up -y
+pkg install curl fzf python termux-am git
+pip install yt-dlp
+
+git clone https://github.com/Zoltraak57/ani-id-cli.git
+cd ani-id-cli
+install -Dm755 ani-id-cli "$PREFIX/bin/ani-id-cli"
+```
+
+Di Android 14, `termux-am` wajib dipasang supaya perintah `am` bisa membuka
+aplikasi lain.
+
+### Player
+
+Pakai APK **mpv** atau **VLC** dari Play Store/F-Droid, bukan paket `mpv` dari
+repo Termux. APK tidak terlihat dari Termux, jadi pengecekan player otomatis
+dilewati dan CLI hanya memberi peringatan.
+
+Untuk mpv, izinkan akses storage lalu tambahkan baris ini di
+**MPV → Settings → Advanced → mpv.conf**:
+
+```
+include="/storage/emulated/0/mpv/mpv.config.mp4"
+```
+
+Jalankan `termux-setup-storage` dan izinkan akses penyimpanan untuk Termux
+maupun mpv. CLI menulis referrer dan User-Agent ke file itu sebelum memutar,
+karena mpv-android tidak menerima opsi playback lewat intent.
+
+VLC tidak butuh config tambahan; pilih dengan `ani-id-cli --vlc "judul"`.
+
+### Catatan
+
+Kalau tetap ingin memakai paket `mpv` dari Termux (bukan APK), playback hanya
+tampil di terminal. Jalankan dengan `--no-detach` dan, bila perlu, paksa output
+terminal:
+
+```sh
+ANI_ID_PLAYER_FLAGS="--vo=tct" ani-id-cli --no-detach "one piece"
+```
 
 ## Penggunaan
 
@@ -109,6 +154,7 @@ Setelah memutar episode, tersedia menu `next`, `replay`, `previous`,
 | --- | --- | --- |
 | `ANI_ID_BASE` | `https://otakudesu.blog` | Domain sumber |
 | `ANI_ID_PLAYER` | `mpv` lalu `vlc` | Player |
+| `ANI_ID_PLAYER_FLAGS` | kosong | Argumen tambahan untuk player |
 | `ANI_ID_QUALITY` | `best` | Kualitas default |
 | `ANI_ID_DOWNLOAD_DIR` | `.` | Folder unduhan |
 | `ANI_ID_HIST_DIR` | `~/.local/state/ani-id-cli` | Folder riwayat |

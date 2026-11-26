@@ -2,7 +2,7 @@
 # ani-id-cli — search, stream, and download anime from otakudesu.blog
 # POSIX sh; see README.md for dependencies and usage.
 
-version_number="0.1.0"
+version_number="0.2.0"
 
 base_url="${ANI_ID_BASE:-https://otakudesu.blog}"
 base_url="${base_url%/}"
@@ -17,6 +17,7 @@ download_dir="${ANI_ID_DOWNLOAD_DIR:-.}"
 quality="${ANI_ID_QUALITY:-best}"
 menu_program="${ANI_ID_MENU:-fzf}"
 player_function="${ANI_ID_PLAYER:-}"
+player_extra_flags="${ANI_ID_PLAYER_FLAGS:-}"
 no_detach=0
 source="search"
 index=""
@@ -221,6 +222,53 @@ dep_ch_failover() {
     return 1
 }
 
+# ANDROID / TERMUX
+
+is_android() {
+    case "${TERMUX_VERSION:-}" in ?*) return 0 ;; esac
+    case "${PREFIX:-}" in *com.termux*) return 0 ;; esac
+    case "$(uname -a 2>/dev/null)" in *ndroid* | *NDROID*) return 0 ;; esac
+    return 1
+}
+
+android_player_for() {
+    case "$1" in
+        "" | mpv | android_mpv) printf 'android_mpv' ;;
+        vlc | android_vlc) printf 'android_vlc' ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
+# mpv-android takes no playback options from the intent, so the referrer and
+# user agent go into a file the user includes from mpv.conf.
+android_mpv_config_write() {
+    _conf_dir="${1:-${ANI_ID_MPV_CONFIG_DIR:-/storage/emulated/0/mpv}}"
+    mkdir -p "$_conf_dir" 2>/dev/null || return 1
+    printf 'referrer=%s\nuser-agent=%s\n' "$referer" "$user_agent" >"$_conf_dir/mpv.config.mp4"
+}
+
+android_mpv_play() {
+    android_mpv_config_write ||
+        warn "Cannot write ${ANI_ID_MPV_CONFIG_DIR:-/storage/emulated/0/mpv}/mpv.config.mp4; run termux-setup-storage"
+    # shellcheck disable=SC2086
+    nohup am start --user 0 -a android.intent.action.VIEW -d "$_video" \
+        -n is.xyz.mpv/.MPVActivity -e "title" "$anime_title Episode $ep_no" \
+        $player_extra_flags >/dev/null 2>&1 &
+}
+
+android_vlc_play() {
+    # shellcheck disable=SC2086
+    nohup am start --user 0 -a android.intent.action.VIEW -d "$_video" \
+        -n org.videolan.vlc/org.videolan.vlc.gui.video.VideoPlayerActivity \
+        -e "title" "$anime_title Episode $ep_no" $player_extra_flags >/dev/null 2>&1 &
+}
+
+android_cleanup() {
+    case "$player_function" in
+        android_mpv) : >"${ANI_ID_MPV_CONFIG_DIR:-/storage/emulated/0/mpv}/mpv.config.mp4" 2>/dev/null ;;
+    esac
+}
+
 sanitize_filename() {
     printf '%s' "$1" | tr '<>:"/\\|?*' '_' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
@@ -418,18 +466,26 @@ play_episode() {
             fi
             info "Downloaded: $download_dir/$_name.mp4"
             ;;
+        android_mpv) android_mpv_play ;;
+        android_vlc) android_vlc_play ;;
         *vlc*)
+            # shellcheck disable=SC2086
             nohup "$player_function" --http-referrer="$referer" \
                 --http-user-agent="$user_agent" --play-and-exit \
-                --meta-title="$anime_title Episode $ep_no" "$_video" >/dev/null 2>&1 &
+                --meta-title="$anime_title Episode $ep_no" $player_extra_flags \
+                "$_video" >/dev/null 2>&1 &
             ;;
         *)
             if [ "$no_detach" = 1 ]; then
+                # shellcheck disable=SC2086
                 "$player_function" --user-agent="$user_agent" --referrer="$referer" \
-                    --ytdl=no --force-media-title="$anime_title Episode $ep_no" "$_video"
+                    --ytdl=no --force-media-title="$anime_title Episode $ep_no" \
+                    $player_extra_flags "$_video"
             else
+                # shellcheck disable=SC2086
                 nohup "$player_function" --user-agent="$user_agent" --referrer="$referer" \
-                    --ytdl=no --force-media-title="$anime_title Episode $ep_no" "$_video" >/dev/null 2>&1 &
+                    --ytdl=no --force-media-title="$anime_title Episode $ep_no" \
+                    $player_extra_flags "$_video" >/dev/null 2>&1 &
             fi
             ;;
     esac
@@ -524,8 +580,8 @@ help_info() {
         "  -h, --help                           Show this help" \
         "  -V, --version                        Show the version" \
         "" \
-        "Environment: ANI_ID_BASE, ANI_ID_PLAYER, ANI_ID_QUALITY, ANI_ID_DOWNLOAD_DIR," \
-        "             ANI_ID_HIST_DIR, ANI_ID_MENU, ANI_ID_CURL" \
+        "Environment: ANI_ID_BASE, ANI_ID_PLAYER, ANI_ID_PLAYER_FLAGS, ANI_ID_QUALITY," \
+        "             ANI_ID_DOWNLOAD_DIR, ANI_ID_HIST_DIR, ANI_ID_MENU, ANI_ID_CURL" \
         "" \
         "Examples:" \
         "  ${0##*/} one piece" \
@@ -586,7 +642,9 @@ main() {
     dep_ch "$curl_exe"
     dep_ch "$menu_program"
 
-    if [ -z "$player_function" ]; then
+    if is_android; then
+        player_function="$(android_player_for "$player_function")"
+    elif [ -z "$player_function" ]; then
         player_function="$(dep_ch_failover "mpv,vlc")" || die "No player found. Looked for mpv and vlc."
     fi
     case "$player_function" in
@@ -595,8 +653,15 @@ main() {
             command -v yt-dlp >/dev/null 2>&1 || command -v "$curl_exe" >/dev/null 2>&1 ||
                 die "Neither yt-dlp nor curl found"
             ;;
+        android_mpv | android_vlc)
+            command -v am >/dev/null 2>&1 ||
+                die "Program am not found. On Android 14 install termux-am: pkg install termux-am"
+            warn "Player checking is disabled on Android; install the mpv or VLC APK."
+            warn "mpv needs include=\"/storage/emulated/0/mpv/mpv.config.mp4\" in its mpv.conf."
+            ;;
         *) dep_ch "$player_function" ;;
     esac
+    trap 'android_cleanup; exit 1' INT HUP TERM
 
     case "$source" in
         history) load_history ;;
