@@ -1,16 +1,16 @@
-## Demo
-
-
-![Demo ani-id-cli](demo/ani-id-cli.webp)
-
-
-
 # ani-id-cli
 
-CLI shell untuk mencari, streaming, dan mengunduh anime subtitle Indonesia
-dari [otakudesu.blog](https://otakudesu.blog). Alurnya mengikuti `ani-cli`:
-cari judul → pilih anime → pilih episode → putar, lalu lanjut ke episode
-berikutnya.
+CLI shell POSIX untuk mencari, streaming, dan mengunduh anime subtitle
+Indonesia dari [otakudesu.blog](https://otakudesu.blog). Alurnya mengikuti
+`ani-cli`: cari judul → pilih anime → pilih episode → putar, lalu lanjut ke
+episode berikutnya.
+
+Tanpa browser dan tanpa aplikasi GUI. Satu file `sh` yang jalan di Linux,
+macOS, dan Termux, dengan `fzf` sebagai menu dan `mpv`/`vlc` sebagai player.
+
+## Demo
+
+![Demo ani-id-cli](demo/ani-id-cli.webp)
 
 ## Fitur
 
